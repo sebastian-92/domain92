@@ -17,7 +17,9 @@ import platform
 from importlib.metadata import version
 import lolpython
 import time
-
+import random_header_generator
+import temp_mails
+headergen = random_header_generator.HeaderGenerator()
 parser = argparse.ArgumentParser(
     description="Automatically creates links for an ip on freedns"
 )
@@ -52,7 +54,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--pages",
-    help="range of pages to scrape, see readme for more info (default is first ten)",
+    help="range of pages to scrape, see wiki for more info (default is first ten)",
     type=str,
 )
 parser.add_argument(
@@ -66,6 +68,7 @@ parser.add_argument(
     help="uses tesseract to automatically solve the captchas. tesseract is now included, and doesn't need to be installed seperately",
     action="store_true",
 )
+parser.add_argument("--domain_type", help="Force only public or only private domains, `public` or `private`", type=str)
 parser.add_argument("--single_tld", help="only create links for a single tld", type=str)
 args = parser.parse_args()
 ip = args.ip
@@ -120,39 +123,48 @@ iplist = eval(iplist)
 
 def getpagelist(arg):
     arg = arg.strip()
-    if "," in arg:
-        arglist = arg.split(",")
-        pagelist = []
-        for item in arglist:
-            if "-" in item:
-                sublist = item.split("-")
-                if len(sublist) == 2:
+    if not arg:
+        checkprint("Empty page range")
+        sys.exit(1)
+
+    pagelist = []
+    parts = [p.strip() for p in arg.split(",") if p.strip() != ""]
+
+    for item in parts:
+        if "-" in item:
+            sublist = item.split("-")
+            if len(sublist) == 2:
+                try:
                     sp = int(sublist[0])
                     ep = int(sublist[1])
-                    if sp < 1 or sp > ep:
-                        checkprint("Invalid page range: " + item)
-                        sys.exit()
-                    pagelist.extend(range(sp, ep + 1))
-                else:
+                except ValueError:
+                    checkprint("Invalid page number: " + item)
+                    sys.exit(1)
+                if sp < 1 or sp > ep:
                     checkprint("Invalid page range: " + item)
-                    sys.exit()
-        return pagelist
-    elif "-" in arg:
-        pagelist = []
-        sublist = arg.split("-")
-        if len(sublist) == 2:
-            sp = int(sublist[0])
-            ep = int(sublist[1])
-            if sp < 1 or sp > ep:
-                checkprint("Invalid page range: " + arg)
-                sys.exit()
-            pagelist.extend(range(sp, ep + 1))
+                    sys.exit(1)
+                pagelist.extend(range(sp, ep + 1))
+            else:
+                checkprint("Invalid page range: " + item)
+                sys.exit(1)
         else:
-            checkprint("Invalid page range: " + arg)
-            sys.exit()
-        return pagelist
-    else:
-        return [int(arg)]
+            try:
+                p = int(item)
+            except ValueError:
+                checkprint("Invalid page number: " + item)
+                sys.exit(1)
+            if p < 1:
+                checkprint("Invalid page number: " + item)
+                sys.exit(1)
+            pagelist.append(p)
+
+    seen = set()
+    result = []
+    for p in pagelist:
+        if p not in seen:
+            seen.add(p)
+            result.append(p)
+    return result
 
 
 def getdomains(arg):
@@ -163,24 +175,17 @@ def getdomains(arg):
             "https://freedns.afraid.org/domain/registry/?page="
             + str(sp)
             + "&sort=2&q=",
-            headers={
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/jxl,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-                "Accept-Encoding": "gzip, deflate, br",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Cache-Control": "max-age=0",
-                "Connection": "keep-alive",
-                "DNT": "1",
-                "Host": "freedns.afraid.org",
-                "Sec-Fetch-Dest": "document",
-                "Sec-Fetch-Mode": "navigate",
-                "Sec-Fetch-Site": "none",
-                "Upgrade-Insecure-Requests": "1",
-                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-                "sec-ch-ua": '"Not;A=Brand";v="24", "Chromium";v="128"',
-                "sec-ch-ua-platform": "Linux",
-            },
+            headers=headergen(),
         ).text
-        pattern = r"<a href=\/subdomain\/edit\.php\?edit_domain_id=(\d+)>([\w.-]+)<\/a>(.+\..+)<td>public<\/td>"
+        if args.domain_type == 'private':
+            checkprint('parsing for private domains')
+            pattern = r"<a href=\/subdomain\/edit\.php\?edit_domain_id=(\d+)>([\w.-]+)<\/a>(.+\..+)<td>private<\/td>"
+        elif args.domain_type == 'public':
+            checkprint('parsing for public domains')
+            pattern = r"<a href=\/subdomain\/edit\.php\?edit_domain_id=(\d+)>([\w.-]+)<\/a>(.+\..+)<td>public<\/td>"
+        else:
+            checkprint('parsing for both private and public domains')
+            pattern = r"<a href=\/subdomain\/edit\.php\?edit_domain_id=(\d+)>([\w.-]+)<\/a>(.+\..+)<td>(public|private)<\/td>"
         matches = re.findall(pattern, html)
         domainnames.extend([match[1] for match in matches])
         domainlist.extend([match[0] for match in matches])
@@ -193,22 +198,7 @@ def find_domain_id(domain_name):
         + str(page)
         + "&q="
         + domain_name,
-        headers={
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/jxl,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Cache-Control": "max-age=0",
-            "Connection": "keep-alive",
-            "DNT": "1",
-            "Host": "freedns.afraid.org",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-            "Upgrade-Insecure-Requests": "1",
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-            "sec-ch-ua": '"Not;A=Brand";v="24", "Chromium";v="128"',
-            "sec-ch-ua-platform": "Linux",
-        },
+        headers=headergen(),
     ).text
     pattern = r"<a href=\/subdomain\/edit\.php\?edit_domain_id=([0-9]+)><font color=red>(?:.+\..+)<\/font><\/a>"
     matches = re.findall(pattern, html)
@@ -334,60 +324,49 @@ def login():
                 image.show()
                 capcha = input("Enter the captcha code: ")
             checkprint("generating email")
-            stuff = req.get(
-                "https://api.guerrillamail.com/ajax.php?f=get_email_address"
-            ).json()
-            email = stuff["email_addr"]
-            checkprint("email address generated email:" + email)
-            checkprint(email)
+            mail = temp_mails.Generator_email()
+            print('using mail provider: '+ mail.__class__.__name__ )
+            email = mail.email
+            checkprint("email address generated email: " + email)
             checkprint("creating account")
-            username = generate_random_string(13)
+            username = generate_random_string(random.randint(8, 13))
             client.create_account(
                 capcha,
                 generate_random_string(13),
                 generate_random_string(13),
                 username,
-                "pegleg1234",
+                'pegleg1234',
                 email,
             )
             checkprint("activation email sent")
             checkprint("waiting for email")
-            hasnotreceived = True
-            while hasnotreceived:
-                nerd = req.get(
-                    "https://api.guerrillamail.com/ajax.php?f=check_email&seq=0&sid_token="
-                    + str(stuff["sid_token"])
-                ).json()
-
-                if int(nerd["count"]) > 0:
-                    checkprint("email received")
-                    mail = req.get(
-                        "https://api.guerrillamail.com/ajax.php?f=fetch_email&email_id="
-                        + str(nerd["list"][0]["mail_id"])
-                        + "&sid_token="
-                        + str(stuff["sid_token"])
-                    ).json()
-                    match = re.search(r'\?([^">]+)"', mail["mail_body"])
-                    if match:
-                        checkprint("code found")
-                        checkprint("verification code: " + match.group(1))
-                        checkprint("activating account")
-                        client.activate_account(match.group(1))
-                        checkprint("accout activated")
-                        time.sleep(1)
-                        checkprint("attempting login")
-                        client.login(email, "pegleg1234")
-                        checkprint("login successful")
-                        hasnotreceived = False
-                    else:
-                        checkprint(
-                            "no match in email! you should generally never get this."
-                        )
-                        checkprint("error!")
-
+            text = mail.wait_for_new_email(timeout=30)
+            if not text:
+                checkprint("no email received, trying again")
+                continue
+            checkprint("email received, getting content")
+            content = str(mail.get_mail_content(mail_id=text["id"]))
+            if content:
+                checkprint("email content found")
+            if text:
+                checkprint("email received")
+                match = re.search(r'\?([^">]+)"', content)
+                if match:
+                    checkprint("code found")
+                    checkprint("verification code: " + match.group(1))
+                    checkprint("activating account")
+                    client.activate_account(match.group(1))
+                    checkprint("account activated")
+                    time.sleep(1)
+                    checkprint("attempting login")
+                    client.login(email, 'pegleg1234')
+                    checkprint("login successful")
                 else:
-                    checkprint("checked email")
-                    time.sleep(2)
+                    checkprint(
+                        "no match in email! you should generally never get this."
+                    )
+                    checkprint("error!")
+                    continue
         except KeyboardInterrupt:
             sys.exit()
         except Exception as e:
@@ -431,17 +410,6 @@ def createlinks(number):
                     args.use_tor = False
             login()
         createdomain()
-
-
-def createmax():
-    login()
-    checkprint("logged in")
-    checkprint("creating domains")
-    createdomain()
-    createdomain()
-    createdomain()
-    createdomain()
-    createdomain()
 
 
 def createdomain():
@@ -576,7 +544,6 @@ def init():
             input(
                 f"Enter the page range(s) to scrape (e.g., 1-10 or 5,8,10-12, default: {args.pages}): "
             )
-            or args.pages
         )
 
     if not args.subdomains:

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "domain92"
-version = "1.3.1"
+version = "1.3.2"
 description = "A totally rad cli tool to automate freedns link creation"
 authors = ["Cbass92 <contact@cbass92.org>"]
 readme = "README.md"
