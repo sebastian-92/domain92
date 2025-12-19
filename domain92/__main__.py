@@ -330,12 +330,13 @@ def login():
             checkprint("email address generated email: " + email)
             checkprint("creating account")
             username = generate_random_string(random.randint(8, 13))
+            password = generate_random_string(random.randint(10, 15))
             client.create_account(
                 capcha,
                 generate_random_string(13),
                 generate_random_string(13),
                 username,
-                'pegleg1234',
+                password,
                 email,
             )
             checkprint("activation email sent")
@@ -359,7 +360,7 @@ def login():
                     checkprint("account activated")
                     time.sleep(1)
                     checkprint("attempting login")
-                    client.login(email, 'pegleg1234')
+                    client.login(email, password)
                     checkprint("login successful")
                 else:
                     checkprint(
