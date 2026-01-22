@@ -28,7 +28,7 @@ pysocks = "^1.7.1"
 stem = "^1.8.2"
 temp-mails = "^2.2.0"
 random-header-generator = "^1.2"
-
+websocket-client = "^1.9.0"
 
 [build-system]
 requires = ["poetry-core"]
